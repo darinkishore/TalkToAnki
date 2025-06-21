@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "TalkToAnki": {
+      "command": "python",
+      "args": ["/path/to/your/project/TalkToAnki/talktoanki_server.py"],
+      "env": {
+        "ANKI_CONNECT_URL": "http://localhost:8765",
+        "ANKI_CONNECT_VERSION": "6",
+        "LOG_LEVEL": "INFO"
+      }
+    }
+  }
+} 

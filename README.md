@@ -73,7 +73,7 @@ pip install -r requirements.txt
   "mcpServers": {
     "anki": {
       "command": "python",
-      "args": ["/path/to/your/TalkToAnki/talktoanki_server.py"],
+      "args": ["/path/to/your/project/TalkToAnki/talktoanki_server.py"],
       "env": {
         "ANKI_CONNECT_URL": "http://localhost:8765",
         "ANKI_CONNECT_VERSION": "6",
@@ -84,7 +84,7 @@ pip install -r requirements.txt
 }
 ```
 
-> 💡 **提示**: 将 `/path/to/your/TalkToAnki/` 替换为实际的项目路径
+> 💡 **提示**: 将 `/path/to/your/project/TalkToAnki/` 替换为实际的项目路径
 
 ### 5. 启动服务
 1. 确保 Anki 桌面版正在运行
@@ -255,18 +255,16 @@ pip install -r requirements.txt
 
 ## 🧪 测试
 
-运行完整的测试套件：
+要测试服务器是否正常工作，可以：
 
-```bash
-python test_talktoanki.py
-```
+1. 确保 Anki 桌面版正在运行
+2. 启动 MCP 服务器
+3. 在支持 MCP 的客户端中调用任何工具进行验证
 
-测试涵盖：
-- 连接验证
-- 所有工具功能
-- 错误处理
-- 批量操作
-- 学习分析功能
+基本功能验证：
+- 连接验证：调用 `anki_get_server_info`
+- 卡组操作：调用 `anki_get_deck_names`
+- 卡片操作：创建测试卡组并添加卡片
 
 ## 🐛 故障排除
 
@@ -302,8 +300,8 @@ export LOG_LEVEL=DEBUG
 
 ```bash
 # 克隆仓库
-git clone https://github.com/your-username/anki-mcp-server.git
-cd anki-mcp-server
+git clone https://github.com/your-username/TalkToAnki.git
+cd TalkToAnki
 
 # 创建虚拟环境
 python -m venv venv
@@ -312,8 +310,8 @@ source venv/bin/activate  # Windows: venv\Scripts\activate
 # 安装开发依赖
 pip install -e ".[dev]"
 
-# 运行测试
-python test_talktoanki.py
+# 验证安装
+python talktoanki_server.py --help
 ```
 
 ## 📝 许可证

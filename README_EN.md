@@ -84,7 +84,7 @@ Create or update `~/.cursor/mcp_config.json`:
   "mcpServers": {
     "TalkToAnki": {
       "command": "python",
-      "args": ["/path/to/your/TalkToAnki/talktoanki_server.py"],
+      "args": ["/path/to/your/project/TalkToAnki/talktoanki_server.py"],
       "env": {
         "ANKI_CONNECT_URL": "http://localhost:8765",
         "ANKI_CONNECT_VERSION": "6",
@@ -95,7 +95,7 @@ Create or update `~/.cursor/mcp_config.json`:
 }
 ```
 
-> 💡 **Tip**: Replace `/path/to/your/TalkToAnki/` with your actual project path
+> 💡 **Tip**: Replace `/path/to/your/project/TalkToAnki/` with your actual project path
 
 ### 5. Start Service
 
@@ -289,20 +289,16 @@ List available note types
 
 ## 🧪 Testing
 
-Run the comprehensive test suite:
+To test if the server works correctly:
 
-```bash
-# Ensure Anki is running with AnkiConnect
-python test_talktoanki.py
-```
+1. Ensure Anki Desktop is running
+2. Start the MCP server
+3. Call any tool in an MCP-compatible client for verification
 
-Test coverage includes:
-- ✅ Connection verification
-- ✅ All 20 tools functionality
-- ✅ Error handling
-- ✅ Configuration validation
-- ✅ Batch operations
-- ✅ Analytics tools
+Basic functionality verification:
+- Connection test: Call `anki_get_server_info`
+- Deck operations: Call `anki_get_deck_names`
+- Card operations: Create test deck and add cards
 
 ## ⚙️ Configuration
 
@@ -336,8 +332,8 @@ cd TalkToAnki
 # Install development dependencies
 pip install -e ".[dev]"
 
-# Run tests
-python test_talktoanki.py
+# Verify installation
+python talktoanki_server.py --help
 
 # Code formatting
 black talktoanki_server.py talktoanki_client.py

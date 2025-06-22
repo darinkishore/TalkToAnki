@@ -140,10 +140,7 @@ Feature requests are welcome! Please:
 
 ```
 TalkToAnki/
-├── talktoanki_server.py    # Main server
-├── talktoanki_client.py    # AnkiConnect client
-├── config.py               # Configuration
-├── test_talktoanki.py      # Tests
+├── talktoanki_server.py    # ⭐ Complete single-file server (all features included)
 ├── requirements.txt        # Dependencies
 ├── pyproject.toml          # Package config
 ├── README.md               # Documentation

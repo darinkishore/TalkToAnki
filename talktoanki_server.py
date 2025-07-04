@@ -250,28 +250,134 @@ class AnkiTools:
     """Anki工具集合类"""
     
     @staticmethod
+    def should_filter_field(field_name: str, field_value: str) -> bool:
+        """判断是否应该过滤掉某个字段"""
+        field_name_lower = field_name.lower()
+        
+        # 过滤音频和图片字段
+        if any(keyword in field_name_lower for keyword in ['audio', 'sound', 'image', 'picture']):
+            return True
+        
+        # 过滤特定字段
+        if field_name == "Add Reverse":
+            return True
+        
+        # 过滤空值字段
+        if not field_value or field_value.strip() == "":
+            return True
+        
+        return False
+    
+    @staticmethod
+    def format_note(note: Dict[str, Any]) -> str:
+        """格式化单个笔记为可读格式"""
+        lines = [f"<note id={note.get('noteId', 'unknown')}>"]
+        
+        fields = note.get('fields', {})
+        for field_name, field_data in fields.items():
+            # 获取字段值
+            if isinstance(field_data, dict):
+                field_value = field_data.get('value', '')
+            else:
+                field_value = str(field_data)
+            
+            # 过滤不需要的字段
+            if AnkiTools.should_filter_field(field_name, field_value):
+                continue
+            
+            lines.append(f"{field_name}: {field_value}")
+        
+        lines.append("</note>")
+        return "\n".join(lines)
+    
+    @staticmethod
+    def format_notes_list(notes: List[Dict[str, Any]]) -> str:
+        """格式化笔记列表"""
+        formatted_notes = []
+        for note in notes:
+            formatted_notes.append(AnkiTools.format_note(note))
+        return "\n\n".join(formatted_notes)
+    
+    @staticmethod
     def format_response(action: str, data: Any, **extra) -> str:
-        """格式化响应数据"""
-        response = {
-            "action": action,
-            "timestamp": None,  # 可以添加时间戳
-            **extra,
-            **data
-        }
-        return json.dumps(response, ensure_ascii=False, indent=2)
+        """格式化响应数据 - 现在返回纯文本而非JSON"""
+        # 对于特定的action，使用特定的格式化
+        if action == "find_notes":
+            # 构建查找结果的文本输出
+            lines = []
+            lines.append(f"Found {data.get('total_count', 0)} notes matching '{data.get('query', '')}'")
+            
+            if data.get('returned_count', 0) > 0:
+                lines.append(f"Showing {data.get('returned_count')} notes (offset: {data.get('offset', 0)})")
+                
+                # 如果有格式化的笔记内容，显示它
+                if data.get('formatted_notes'):
+                    lines.append("")
+                    lines.append(data['formatted_notes'])
+                # 否则显示ID列表
+                elif data.get('note_ids'):
+                    lines.append("")
+                    lines.append("Note IDs:")
+                    lines.append(", ".join(str(id) for id in data['note_ids']))
+                
+                if data.get('has_more'):
+                    lines.append("")
+                    lines.append(f"More results available. Use offset={data.get('next_offset')} to see next page.")
+            
+            return "\n".join(lines)
+        
+        elif action == "get_note_info" and "formatted_notes" in data:
+            return data['formatted_notes']
+        
+        elif action == "get_due_cards" and "formatted_sample" in data:
+            lines = []
+            deck = data.get('deck_name', 'all decks')
+            lines.append(f"Due cards in {deck}:")
+            lines.append(f"- New: {data.get('new_cards', 0)}")
+            lines.append(f"- Learning: {data.get('learning_cards', 0)}")
+            lines.append(f"- Review: {data.get('review_cards', 0)}")
+            lines.append(f"- Total: {data.get('total_due', 0)}")
+            
+            if data.get('formatted_sample'):
+                lines.append("")
+                lines.append("Sample cards:")
+                lines.append(data['formatted_sample'])
+            
+            return "\n".join(lines)
+        
+        elif action == "get_deck_names":
+            decks = data.get('decks', [])
+            if not decks:
+                return "No decks found"
+            lines = [f"Found {len(decks)} decks:"]
+            for deck in decks:
+                lines.append(f"- {deck}")
+            return "\n".join(lines)
+        
+        elif action == "get_deck_stats":
+            lines = []
+            lines.append(f"Stats for deck '{data.get('deck_name', 'Unknown')}':")
+            lines.append(f"Total notes: {data.get('total_notes', 0)}")
+            stats = data.get('stats', {})
+            if stats:
+                for key, value in stats.items():
+                    lines.append(f"- {key}: {value}")
+            return "\n".join(lines)
+        
+        # 默认格式化 - 返回简单的成功消息
+        if data.get('success'):
+            message = data.get('message', f"{action} completed successfully")
+            return message
+        
+        # 如果没有特定格式，返回关键信息
+        return str(data)
     
     @staticmethod
     def handle_error(action: str, error: Exception) -> str:
-        """统一错误处理"""
+        """统一错误处理 - 返回纯文本错误消息"""
         error_msg = str(error)
         logger.error(f"{action} 失败: {error_msg}")
-        
-        return json.dumps({
-            "action": action,
-            "success": False,
-            "error": error_msg,
-            "error_type": type(error).__name__
-        }, ensure_ascii=False, indent=2)
+        return f"Error: {error_msg}"
 
 # ============================================================================
 # 基础工具 (8个)
@@ -391,31 +497,82 @@ async def anki_add_note(
         return AnkiTools.handle_error("add_note", e)
 
 @app.tool()
-async def anki_find_notes(query: str) -> str:
-    """根据查询条件查找卡片
+async def anki_find_notes(query: str, limit: int = 20, offset: int = 0, with_content: bool = True) -> str:
+    """根据查询条件查找卡片，支持分页和内容预览
     
     Args:
         query: 查询字符串（使用Anki查询语法）
+        limit: 返回结果数量限制（默认20，设为0只返回总数）
+        offset: 结果偏移量，用于分页（默认0）
+        with_content: 是否获取卡片内容（默认True，设为False只返回ID列表）
         
     Returns:
-        JSON格式的查找结果，包含卡片ID列表
+        JSON格式的查找结果，包含卡片预览或ID列表
+        
+    Examples:
+        - find_notes("tag:grammar") - 返回前20个语法卡片的内容
+        - find_notes("deck:Japanese", limit=50) - 返回前50个日语卡片
+        - find_notes("is:new", offset=20) - 跳过前20个，返回接下来的20个新卡片
+        - find_notes("verb", with_content=False, limit=1000) - 快速获取所有动词卡片的ID
     """
     try:
         if not query.strip():
             raise ValueError("查询条件不能为空")
         
         async with get_anki_client() as client:
-            note_ids = await client.invoke("findNotes", {"query": query})
+            # 获取所有匹配的笔记ID
+            all_note_ids = await client.invoke("findNotes", {"query": query})
+            total_count = len(all_note_ids)
             
-        return AnkiTools.format_response(
-            "find_notes",
-            {
+            # 处理分页
+            if limit == 0:
+                # 只返回计数，不获取内容
+                return AnkiTools.format_response(
+                    "find_notes",
+                    {
+                        "query": query,
+                        "total_count": total_count,
+                        "message": f"Found {total_count} notes",
+                        "success": True
+                    }
+                )
+            
+            # 获取分页后的ID子集
+            start_idx = offset
+            end_idx = offset + limit
+            page_note_ids = all_note_ids[start_idx:end_idx]
+            
+            # 根据需要获取内容
+            formatted_notes = ""
+            notes_info = []
+            if with_content and page_note_ids:
+                notes_info = await client.invoke("notesInfo", {"notes": page_note_ids})
+                formatted_notes = AnkiTools.format_notes_list(notes_info)
+            
+            # 构建响应
+            response_data = {
                 "query": query,
-                "note_ids": note_ids,
-                "count": len(note_ids),
+                "total_count": total_count,
+                "offset": offset,
+                "limit": limit,
+                "returned_count": len(page_note_ids),
+                "note_ids": page_note_ids,
                 "success": True
             }
-        )
+            
+            if with_content:
+                response_data["formatted_notes"] = formatted_notes
+                response_data["notes"] = notes_info
+            
+            # 添加分页提示信息
+            if total_count > offset + limit:
+                response_data["has_more"] = True
+                response_data["next_offset"] = offset + limit
+            else:
+                response_data["has_more"] = False
+            
+            return AnkiTools.format_response("find_notes", response_data)
+            
     except Exception as e:
         return AnkiTools.handle_error("find_notes", e)
 
@@ -438,9 +595,13 @@ async def anki_get_note_info(note_ids: List[int]) -> str:
         async with get_anki_client() as client:
             notes_info = await client.invoke("notesInfo", {"notes": note_ids})
             
+        # 格式化笔记显示
+        formatted_notes = AnkiTools.format_notes_list(notes_info)
+        
         return AnkiTools.format_response(
             "get_note_info",
             {
+                "formatted_notes": formatted_notes,
                 "notes": notes_info,
                 "count": len(notes_info),
                 "success": True
@@ -482,6 +643,27 @@ async def anki_get_deck_stats(deck_name: str) -> str:
         )
     except Exception as e:
         return AnkiTools.handle_error("get_deck_stats", e)
+
+@app.tool()
+async def anki_view_deck_contents(deck_name: str, limit: int = 20, offset: int = 0) -> str:
+    """查看指定卡组的卡片内容
+    
+    Args:
+        deck_name: 卡组名称
+        limit: 显示卡片数量（默认20）
+        offset: 跳过的卡片数量，用于分页（默认0）
+        
+    Returns:
+        格式化的卡组内容列表
+    """
+    try:
+        if not deck_name.strip():
+            raise ValueError("卡组名称不能为空")
+        
+        # 使用find_notes来获取卡组内容
+        return await anki_find_notes(f'deck:"{deck_name}"', limit=limit, offset=offset, with_content=True)
+    except Exception as e:
+        return AnkiTools.handle_error("view_deck_contents", e)
 
 @app.tool()
 async def anki_sync() -> str:
@@ -643,10 +825,13 @@ async def anki_move_notes(note_ids: List[int], target_deck: str) -> str:
         
         async with get_anki_client() as client:
             # 获取这些笔记的卡片ID
-            cards_info = await client.invoke("cardsInfo", {"cards": note_ids})
             card_ids = []
-            for card in cards_info:
-                card_ids.extend([card.get("cardId") for card in cards_info if card.get("cardId")])
+            for note_id in note_ids:
+                cards = await client.invoke("findCards", {"query": f"nid:{note_id}"})
+                card_ids.extend(cards)
+            
+            if not card_ids:
+                raise ValueError("未找到对应的卡片")
             
             # 移动卡片到目标卡组
             await client.invoke("changeDeck", {
@@ -661,7 +846,7 @@ async def anki_move_notes(note_ids: List[int], target_deck: str) -> str:
                 "target_deck": target_deck,
                 "count": len(note_ids),
                 "success": True,
-                "message": f"成功将 {len(note_ids)} 张卡片移动到 '{target_deck}'"
+                "message": f"Successfully moved {len(note_ids)} cards to '{target_deck}'"
             }
         )
     except Exception as e:
@@ -737,13 +922,24 @@ async def anki_get_due_cards(deck_name: Optional[str] = None) -> str:
             
             # 获取卡片详细信息
             cards_info = []
+            notes_info = []
             if due_card_ids:
                 cards_info = await client.invoke("cardsInfo", {"cards": due_card_ids[:50]})  # 限制返回数量
+                
+                # 获取对应的笔记信息
+                note_ids = list(set(card.get('note') for card in cards_info if card.get('note')))
+                if note_ids:
+                    notes_info = await client.invoke("notesInfo", {"notes": note_ids[:20]})  # 限制数量
             
             # 统计不同类型的卡片
             new_cards = len(await client.invoke("findCards", {"query": f"{query} is:new"}))
             learning_cards = len(await client.invoke("findCards", {"query": f"{query} is:learn"}))
             review_cards = len(await client.invoke("findCards", {"query": f"{query} is:review"}))
+        
+        # 格式化笔记显示
+        formatted_sample = ""
+        if notes_info:
+            formatted_sample = AnkiTools.format_notes_list(notes_info)
         
         return AnkiTools.format_response(
             "get_due_cards",
@@ -753,6 +949,7 @@ async def anki_get_due_cards(deck_name: Optional[str] = None) -> str:
                 "new_cards": new_cards,
                 "learning_cards": learning_cards,
                 "review_cards": review_cards,
+                "formatted_sample": formatted_sample,
                 "sample_cards": cards_info,
                 "success": True
             }
